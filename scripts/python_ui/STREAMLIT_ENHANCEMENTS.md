@@ -46,11 +46,6 @@ The Fabric Pattern Studio has been significantly enhanced with modern Streamlit 
    - Chat history management
    - Export and save chat sessions
 
-2. **Voice Input Support**
-   - `st.audio_input()` for voice recording (beta feature)
-   - Audio playback capabilities
-   - Fallback to text input
-
 ### 📊 Enhanced Analytics
 
 1. **Execution Statistics**
@@ -118,7 +113,6 @@ The Fabric Pattern Studio has been significantly enhanced with modern Streamlit 
 | `st.feedback()` | Button pair | User feedback |
 | `st.toast()` | `st.success()`/`st.info()` | Notifications |
 | `st.dialog()` | Expander | Modal interactions |
-| `st.audio_input()` | Text input | Voice recording |
 | `st.status()` | Spinner | Progress indication |
 
 ## 🎯 Key Benefits
@@ -157,8 +151,7 @@ with st.chat_message("assistant"):
 1. **Advanced Analytics Dashboard**
 2. **Pattern Recommendation System**
 3. **Collaborative Features**
-4. **Advanced Voice Processing**
-5. **Custom Theme Support**
+4. **Custom Theme Support**
 
 ---
 
