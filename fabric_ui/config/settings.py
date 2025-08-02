@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
 @dataclass
-class Settings:
+class AppConfig:
     APP_NAME: str = "Fabric Studio"
+    VERSION: str = "0.1.0"
 
-APP_NAME = Settings.APP_NAME
+APP_NAME = AppConfig.APP_NAME
