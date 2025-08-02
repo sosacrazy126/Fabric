@@ -82,7 +82,7 @@ def render_pattern_execution_view():
                 with col2:
                     if st.button("🧹 Clear Input", use_container_width=True):
                         st.session_state.input_content = ""
-                        st.experimental_rerun()
+                        st.rerun()
 
             st.markdown("---")
             chain_mode = st.checkbox(
