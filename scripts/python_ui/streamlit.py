@@ -436,27 +436,16 @@ def handle_application_error(e):
     logger.error("Unexpected error in application", exc_info=True)
     st.error(f"An unexpected error occurred: {str(e)}")
 
+import streamlit as st
+import warnings
+
 def main():
-    """Main function to run the Streamlit app."""
-    logger.info("Starting Fabric Pattern Studio")
-    try:
-        initialize_app()
-        render_header()
-        view = setup_sidebar()
-
-        if view == "Run Patterns":
-            render_pattern_execution_view()
-        elif view == "Pattern Management":
-            render_pattern_management_view()
-        else:
-            render_analysis_dashboard_view()
-
-    except Exception as e:
-        handle_application_error(e)
-    finally:
-        logger.info("Application shutdown")
-
+    st.warning(
+        "This UI entrypoint has been DEPRECATED. Please use `fabric_ui.app.main()` instead.",
+        icon="⚠️"
+    )
+    import fabric_ui.app
+    fabric_ui.app.main()
 
 if __name__ == "__main__":
-    logger.info("Application startup")
     main()
