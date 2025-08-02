@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fabric_ui.config.settings import APP_NAME
 from fabric_ui.config.logging_config import setup_logging
+from fabric_ui.core.fabric_client import FabricClient
+from fabric_ui.core.pattern_manager import PatternManager
 from fabric_ui.ui.layout.header import render_header
 from fabric_ui.ui.layout.sidebar import render_sidebar
 from fabric_ui.ui.views.prompt_hub import PromptHubView
@@ -14,9 +16,16 @@ class FabricStudioApp:
     def __init__(self):
         setup_logging()
         self.app_name = APP_NAME
+        self.fabric_client = FabricClient()
+        self.pattern_manager = PatternManager(self.fabric_client)
+        self.views = {
+            "Prompt Hub": lambda: PromptHubView(self.fabric_client, self.pattern_manager).render(),
+            "Pattern Management": lambda: st.info("Pattern Management coming soon."),
+            "Analysis": lambda: st.info("Analysis view coming soon."),
+            "Settings": lambda: st.info("Settings coming soon."),
+        }
 
     def inject_custom_css(self):
-        # Look for a static CSS file and inject if it exists
         css_path = Path(__file__).parent / "static" / "styles.css"
         if css_path.exists():
             with open(css_path) as f:
@@ -30,12 +39,12 @@ class FabricStudioApp:
         )
         self.inject_custom_css()
         render_header()
-        view = render_sidebar()
-
-        # Routing logic (minimal for now)
-        if view == "Prompt Hub":
-            PromptHubView().render()
-        # TODO: Add more views ("Pattern Management", etc.) as they are migrated
+        status = self.fabric_client.get_status()
+        view = render_sidebar(status)
+        if view in self.views:
+            self.views[view]()
+        else:
+            st.error("Unknown view selected.")
 
 def main():
     FabricStudioApp().main()
