@@ -45,3 +45,11 @@ class ChainStep:
     output: Optional[str] = None
     error: Optional[str] = None
     duration_ms: int = 0
+
+@dataclass
+class ExecutionConfig:
+    provider: str | None = None
+    model: str | None = None
+    timeout_s: int = 90
+    max_retries: int = 1
+    retry_delay_s: float = 0.0
