@@ -35,7 +35,10 @@ def main() -> None:
         execution.render()
     elif view == "Pattern Management":
         management.render()
+    elif view == "Analysis Dashboard":
+        dashboard.render()
     else:
+        # Default to dashboard if view is unknown
         dashboard.render()
 
 if __name__ == "__main__":
