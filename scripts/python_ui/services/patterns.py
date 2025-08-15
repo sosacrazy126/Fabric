@@ -36,8 +36,8 @@ def list_patterns() -> List[PatternSpec]:
             name=p.stem,
             path=p,
             content=p.read_text(encoding="utf-8"),
-            created_at=None,
-            modified_at=None,
+            created_at=stat.st_ctime,
+            modified_at=stat.st_mtime,
             meta={"size": stat.st_size}
         ))
     logger.info("patterns.list: %d found in %s", len(specs), root)
