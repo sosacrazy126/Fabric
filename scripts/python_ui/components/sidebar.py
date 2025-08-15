@@ -1,5 +1,6 @@
 import streamlit as st
 from app import routing
+from components import provider_selector
 
 VIEWS = ["Run Patterns", "Pattern Management", "Analysis Dashboard"]
 
@@ -14,4 +15,22 @@ def render() -> None:
 
         st.divider()
         st.header("Configuration")
-        st.info("Model/Provider config will be added in PR-2/PR-3.")
+        
+        # Use the provider_selector component
+        vendor, model = provider_selector.render()
+        
+        # Store selected config in session state
+        if "config" not in st.session_state:
+            st.session_state.config = {}
+        
+        st.session_state.config["vendor"] = vendor
+        st.session_state.config["model"] = model
+        
+        # Render advanced settings
+        advanced_settings = provider_selector.render_advanced_settings()
+        st.session_state.config.update(advanced_settings)
+        
+        # Display status indicator
+        if vendor and model:
+            provider_selector.render_status_indicator(vendor, model)
+            st.caption(f"📡 {vendor} - {model}")

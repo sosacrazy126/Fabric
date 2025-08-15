@@ -68,11 +68,16 @@ def run_fabric(
     safe_input = sanitize_input(input_text, max_length=50_000)
 
     args: List[str] = [FABRIC_BIN, "--pattern", pattern]
-    # Optional provider/model flags (kept flexible for compatibility)
-    if provider:
-        args += ["--provider", provider]
+    
+    # Handle vendor/model specification
+    # Fabric expects either just model name or vendor/model format
     if model:
-        args += ["--model", model]
+        # If vendor is specified, use vendor/model format
+        if provider and provider != "All Providers":
+            model_arg = f"{provider}/{model}"
+        else:
+            model_arg = model
+        args += ["--model", model_arg]
 
     logger.info("runner: %s", " ".join(args))
     res = _run_cmd(args, safe_input, timeout_s=timeout_s)
