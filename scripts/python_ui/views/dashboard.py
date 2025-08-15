@@ -44,8 +44,10 @@ def render() -> None:
     tab1, tab2 = st.tabs(["📊 Statistics", "📋 History & Outputs"])
     
     with tab1:
-        # Detailed statistics using the stats panel component
-        stats_panel.render_stats_overview()
+        # Render only storage and pattern stats (execution stats already shown above)
+        stats_panel.render_storage_stats()
+        st.markdown("---")
+        stats_panel.render_pattern_stats()
     
     with tab2:
         # History and starred outputs using the history table component
