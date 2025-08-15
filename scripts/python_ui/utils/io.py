@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Any
 
 def atomic_write_text(path: Path, data: str, mode: int = 0o600) -> None:
-    path = Path(path)
+    def atomic_write_text(path: Path, data: str, mode: int = 0o600) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", delete=False, dir=path.parent) as tmp:
         tmp.write(data)
