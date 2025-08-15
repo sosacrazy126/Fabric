@@ -254,7 +254,7 @@ def render_pattern_management_view():
                                     st.success(f"✓ {pattern}: {message}")
                                 else:
                                     st.error(f"✗ {pattern}: {message}")
-                            st.experimental_rerun()
+                            st.rerun()
                         else:
                             st.error(
                                 "Please confirm deletion by checking the box above."
