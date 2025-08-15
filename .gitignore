@@ -2,6 +2,10 @@
 .direnv
 result
 
+# Version files (auto-generated, causes merge conflicts)
+cmd/fabric/version.go
+nix/pkgs/fabric/version.nix
+
 # macOS local stores
 .DS_Store
 
