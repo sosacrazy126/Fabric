@@ -7,6 +7,52 @@ from utils.errors import ui_error_boundary
 from utils.logging import logger
 from services import patterns
 
+# Cache for pattern data to prevent repeated loading
+_pattern_cache = {
+    "specs": None,
+    "descriptions": None,
+    "search_index": None,
+    "last_refresh": 0
+}
+
+CACHE_REFRESH_INTERVAL = 60  # Refresh cache every 60 seconds
+
+def _get_cached_patterns():
+    """Get cached pattern data, refreshing if needed."""
+    import time
+    current_time = time.time()
+    
+    # Check if cache needs refresh
+    if (_pattern_cache["specs"] is None or 
+        current_time - _pattern_cache["last_refresh"] > CACHE_REFRESH_INTERVAL):
+        
+        try:
+            # Load pattern specs
+            pattern_specs = patterns.list_patterns()
+            _pattern_cache["specs"] = pattern_specs
+            
+            # Build search index for fast searching
+            search_index = {}
+            for spec in pattern_specs:
+                if hasattr(spec, 'name') and hasattr(spec, 'content'):
+                    # Create searchable text combining name and content
+                    searchable_text = f"{spec.name} {spec.content or ''}".lower()
+                    search_index[spec.name] = searchable_text
+            
+            _pattern_cache["search_index"] = search_index
+            _pattern_cache["descriptions"] = _load_pattern_descriptions()
+            _pattern_cache["last_refresh"] = current_time
+            
+            logger.info(f"Refreshed pattern cache with {len(pattern_specs)} patterns")
+            
+        except Exception as e:
+            logger.error(f"Failed to refresh pattern cache: {e}")
+            # Return existing cache if available
+            if _pattern_cache["specs"] is None:
+                raise e
+    
+    return _pattern_cache
+
 @ui_error_boundary
 def render_pattern_selector(key: str = "pattern_selector") -> List[str]:
     """
@@ -18,9 +64,10 @@ def render_pattern_selector(key: str = "pattern_selector") -> List[str]:
     Returns:
         List of selected pattern names
     """
-    # Load patterns from service
+    # Load patterns from cache
     try:
-        pattern_specs = patterns.list_patterns()
+        cache = _get_cached_patterns()
+        pattern_specs = cache["specs"]
         pattern_names = [spec.name for spec in pattern_specs]
     except Exception as e:
         logger.error(f"Failed to load patterns: {e}")
@@ -31,32 +78,64 @@ def render_pattern_selector(key: str = "pattern_selector") -> List[str]:
         st.warning("No patterns available. Create a pattern first.")
         return []
 
-    # Load pattern descriptions (this should be migrated to a service later)
-    descriptions_data = _load_pattern_descriptions()
+    # Load pattern descriptions from cache
+    descriptions_data = cache["descriptions"]
     all_tags = _get_all_tags(descriptions_data)
+
+    # Search and filter controls
+    st.subheader("🔍 Find Patterns")
+    
+    # Search bar
+    search_col, filter_col = st.columns([2, 1])
+    
+    with search_col:
+        search_query = st.text_input(
+            "Search patterns",
+            value=st.session_state.get(f"{key}_search", ""),
+            placeholder="Search by name, description, or content...",
+            key=f"{key}_search_input",
+            help="Search through pattern names, descriptions, and content"
+        )
+        st.session_state[f"{key}_search"] = search_query
+    
+    with filter_col:
+        show_filters = st.toggle(
+            "🏷️ Filters", 
+            value=st.session_state.get(f"{key}_show_filters", False),
+            key=f"{key}_filter_toggle"
+        )
+        st.session_state[f"{key}_show_filters"] = show_filters
 
     # Filter controls
     selected_tags = []
-    with st.expander("Filter by Category", expanded=False):
-        if all_tags:
-            try:
-                selected_tags = st.pills(
-                    "Select tags to filter patterns",
-                    all_tags,
-                    selection_mode="multi",
-                    key=f"{key}_tag_pills",
-                    label_visibility="collapsed"
-                )
-            except (AttributeError, TypeError):
-                selected_tags = st.multiselect(
-                    "Select tags to filter patterns",
-                    all_tags,
-                    key=f"{key}_tag_multiselect",
-                    label_visibility="collapsed"
-                )
+    if show_filters:
+        with st.expander("Filter by Category", expanded=True):
+            if all_tags:
+                try:
+                    selected_tags = st.pills(
+                        "Select tags to filter patterns",
+                        all_tags,
+                        selection_mode="multi",
+                        key=f"{key}_tag_pills",
+                        label_visibility="collapsed"
+                    )
+                except (AttributeError, TypeError):
+                    # Fall back to multiselect if pills is not available
+                    selected_tags = st.multiselect(
+                        "Select tags to filter patterns",
+                        all_tags,
+                        key=f"{key}_tag_multiselect",
+                        label_visibility="collapsed"
+                    )
 
     # Apply filters
     filtered_patterns = pattern_names
+
+    # Apply search filter first using cached search index
+    if search_query:
+        filtered_patterns = _filter_patterns_by_search_cached(
+            filtered_patterns, search_query, cache["search_index"], descriptions_data
+        )
 
     # Filter by tags
     if selected_tags:
@@ -65,12 +144,25 @@ def render_pattern_selector(key: str = "pattern_selector") -> List[str]:
         )
 
     if not filtered_patterns:
-        st.info("No patterns match your filters. Try adjusting your search or tags.")
+        if search_query and selected_tags:
+            st.info(f"No patterns match search '{search_query}' and tags: {', '.join(selected_tags)}")
+        elif search_query:
+            st.info(f"No patterns match search: '{search_query}'")
+        elif selected_tags:
+            st.info(f"No patterns match tags: {', '.join(selected_tags)}")
+        else:
+            st.info("No patterns match your filters.")
         return []
 
     # Show filter results summary
+    summary_parts = []
+    if search_query:
+        summary_parts.append(f"search: '{search_query}'")
     if selected_tags:
-        st.caption(f"📊 Showing {len(filtered_patterns)} patterns matching tags: {', '.join(selected_tags)}")
+        summary_parts.append(f"tags: {', '.join(selected_tags)}")
+    
+    if summary_parts:
+        st.caption(f"📊 Showing {len(filtered_patterns)} of {len(pattern_names)} patterns matching {' and '.join(summary_parts)}")
 
     # Enhanced pattern display with variable indicators
     pattern_display_options = []
@@ -289,3 +381,49 @@ def _get_pattern_description_and_tags(pattern_name: str, descriptions_data: Opti
         "description": "No description available",
         "tags": []
     }
+
+
+def _filter_patterns_by_search_cached(patterns: List[str], search_query: str, search_index: Dict[str, str], descriptions_data: List[Dict[str, Any]]) -> List[str]:
+    """Filter patterns by search query using cached search index for better performance."""
+    if not search_query:
+        return patterns
+    
+    search_lower = search_query.lower().strip()
+    if not search_lower:
+        return patterns
+    
+    # Create description lookup once
+    pattern_descriptions = {}
+    for pattern_data in descriptions_data:
+        if isinstance(pattern_data, dict):
+            pattern_name = pattern_data.get("patternName")
+            description = pattern_data.get("description", "")
+            if pattern_name:
+                pattern_descriptions[pattern_name] = description.lower()
+    
+    filtered_patterns = []
+    for pattern in patterns:
+        # Check in cached search index (includes name + content)
+        searchable_text = search_index.get(pattern, "")
+        if search_lower in searchable_text:
+            filtered_patterns.append(pattern)
+            continue
+        
+        # Also check description
+        description = pattern_descriptions.get(pattern, "")
+        if search_lower in description:
+            filtered_patterns.append(pattern)
+            continue
+    
+    return filtered_patterns
+
+# Legacy function kept for compatibility
+def _filter_patterns_by_search(patterns: List[str], search_query: str, pattern_specs: List[Any], descriptions_data: List[Dict[str, Any]]) -> List[str]:
+    """Legacy search function - use _filter_patterns_by_search_cached for better performance."""
+    # Get current cache to use the fast method
+    try:
+        cache = _get_cached_patterns()
+        return _filter_patterns_by_search_cached(patterns, search_query, cache["search_index"], descriptions_data)
+    except:
+        # Fallback to old implementation if cache fails
+        return patterns

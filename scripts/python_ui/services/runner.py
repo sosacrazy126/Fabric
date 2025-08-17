@@ -1,10 +1,11 @@
 from __future__ import annotations
 import subprocess, time
-from typing import List, Dict
+from typing import List, Dict, Optional
 from utils.logging import logger
 from utils.errors import ExecutionError
 from utils.typing import RunResult, ChainStep
 from utils.security import validate_pattern_name, sanitize_input
+from services.monitoring import track_execution, update_execution_progress, complete_execution
 
 FABRIC_BIN = "fabric"
 DEFAULT_TIMEOUT = 90  # seconds
@@ -58,14 +59,28 @@ def run_fabric(
     provider: str | None = None,
     model: str | None = None,
     timeout_s: int = DEFAULT_TIMEOUT,
+    execution_id: Optional[str] = None,
 ) -> RunResult:
     """
-    Execute a single Fabric pattern securely.
+    Execute a single Fabric pattern securely with real-time monitoring.
     - Validates pattern name, sanitizes input, enforces timeout & output caps.
     - Never uses shell=True.
+    - Tracks execution progress for real-time monitoring.
     """
     validate_pattern_name(pattern)
     safe_input = sanitize_input(input_text, max_length=50_000)
+
+    # Create or use existing execution tracking
+    if execution_id is None:
+        execution_id = track_execution(
+            pattern=pattern,
+            provider=provider,
+            model=model,
+            input_size=len(safe_input)
+        )
+    
+    # Update progress to indicate execution started
+    update_execution_progress(execution_id, 0.1)
 
     args: List[str] = [FABRIC_BIN, "--pattern", pattern]
     
@@ -79,11 +94,20 @@ def run_fabric(
             model_arg = model
         args += ["--model", model_arg]
 
-    logger.info("runner: %s", " ".join(args))
+    logger.info("runner: %s (execution_id: %s)", " ".join(args), execution_id)
+    
+    # Update progress before execution
+    update_execution_progress(execution_id, 0.2)
+    
+    # Execute command
     res = _run_cmd(args, safe_input, timeout_s=timeout_s)
+    
+    # Complete execution tracking
+    complete_execution(execution_id, res)
+    
     if not res.success:
-        # map known failures to typed ExecutionError at call-sites if needed
         logger.debug("runner failure meta=%s", res.meta)
+    
     return res
 
 def run_chain(

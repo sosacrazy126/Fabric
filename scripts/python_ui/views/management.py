@@ -2,14 +2,14 @@ import streamlit as st
 from utils.errors import ui_error_boundary
 from services import patterns
 from utils.typing import PatternSpec
-from components import pattern_editor, pattern_list
+from components import pattern_editor, pattern_list, pattern_descriptions
 
 @ui_error_boundary
 def render() -> None:
     st.header("⚙️ Pattern Management")
     
     # Create tabs for different management operations
-    create_tab, edit_tab, delete_tab = st.tabs(["Create", "Edit", "Delete"])
+    create_tab, edit_tab, delete_tab, descriptions_tab = st.tabs(["Create", "Edit", "Delete", "📋 Descriptions"])
     
     with create_tab:
         _render_create_tab()
@@ -19,6 +19,11 @@ def render() -> None:
     
     with delete_tab:
         _render_delete_tab()
+    
+    with descriptions_tab:
+        # Pattern descriptions management (matching original functionality)
+        descriptions_manager = pattern_descriptions.create_pattern_descriptions_manager()
+        descriptions_manager.render_management_interface()
 
 @ui_error_boundary
 def _render_create_tab() -> None:

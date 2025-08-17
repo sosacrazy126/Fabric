@@ -1,18 +1,107 @@
 import streamlit as st
 from utils.errors import ui_error_boundary
-from components import stats_panel, history_table
+from components import stats_panel, history_table, real_time_monitor, starring_system
 
 @ui_error_boundary
 def render() -> None:
-    st.header("📊 Analysis Dashboard")
+    st.header("📊 Real-time Pattern Execution Dashboard")
     
     # Welcome message and overview
     st.markdown("""
-    Welcome to the Analysis Dashboard! Here you can monitor your pattern execution statistics,
-    review output history, and manage your starred outputs.
+    Welcome to the Enhanced Dashboard! Monitor real-time pattern executions, system health,
+    and comprehensive analytics for your AI workflow orchestration.
     """)
     
-    # Quick overview metrics at the top
+    # Initialize monitoring session
+    real_time_monitor.start_monitoring_session()
+    
+    # Auto-refresh controls
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        auto_refresh = st.checkbox("🔄 Auto-refresh (2s)", value=False, key="dashboard_auto_refresh")
+    with col2:
+        if st.button("🔄 Refresh Now"):
+            st.rerun()
+    with col3:
+        view_mode = st.selectbox("View", ["Enhanced", "Classic"], index=0)
+    
+    # Auto-refresh logic using proper Streamlit pattern
+    if auto_refresh:
+        # Use a placeholder to show refresh timing
+        refresh_placeholder = st.empty()
+        refresh_placeholder.info("🔄 Auto-refresh enabled - Dashboard will update automatically")
+        
+        # Use time tracking in session state to prevent infinite loops
+        current_time = st.session_state.get("last_dashboard_refresh", 0)
+        import time
+        now = time.time()
+        
+        # Only rerun if 2 seconds have passed since last refresh
+        if now - current_time >= 2:
+            st.session_state["last_dashboard_refresh"] = now
+            st.rerun()
+    
+    if view_mode == "Enhanced":
+        # Enhanced dashboard with real-time monitoring
+        
+        # Real-time monitoring section
+        real_time_monitor.render_active_executions()
+        
+        # System overview
+        col1, col2 = st.columns(2)
+        with col1:
+            real_time_monitor.render_execution_stats()
+        with col2:
+            real_time_monitor.render_system_health()
+        
+        st.markdown("---")
+        
+        # Performance analytics
+        real_time_monitor.render_execution_timeline()
+        real_time_monitor.render_performance_trends()
+        
+        st.markdown("---")
+        
+        # Classic components in tabs
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Legacy Stats", "📋 History & Outputs", "⭐ Starred Outputs", "⚙️ Controls"])
+        
+        with tab1:
+            render_classic_stats()
+        
+        with tab2:
+            history_table.render_history_overview()
+        
+        with tab3:
+            # Starred outputs management (matching original functionality)
+            starring_sys = starring_system.create_starring_system()
+            starring_sys.render_starred_outputs_management()
+        
+        with tab4:
+            render_dashboard_controls()
+    
+    else:
+        # Classic dashboard view
+        render_classic_overview()
+        
+        # Main dashboard content with tabs
+        tab1, tab2, tab3 = st.tabs(["📊 Statistics", "📋 History & Outputs", "⭐ Starred Outputs"])
+        
+        with tab1:
+            render_classic_stats()
+        
+        with tab2:
+            history_table.render_history_overview()
+        
+        with tab3:
+            # Starred outputs management (matching original functionality)
+            starring_sys = starring_system.create_starring_system()
+            starring_sys.render_starred_outputs_management()
+        
+        render_dashboard_controls()
+
+
+def render_classic_overview():
+    """Render the classic dashboard overview metrics."""
     st.markdown("### 📈 Quick Overview")
     col1, col2, col3, col4 = st.columns(4)
     
@@ -39,23 +128,21 @@ def render() -> None:
         st.metric("Starred Items", len(starred_outputs))
     
     st.markdown("---")
-    
-    # Main dashboard content with tabs
-    tab1, tab2 = st.tabs(["📊 Statistics", "📋 History & Outputs"])
-    
-    with tab1:
-        # Render only storage and pattern stats (execution stats already shown above)
-        stats_panel.render_storage_stats()
-        st.markdown("---")
-        stats_panel.render_pattern_stats()
-    
-    with tab2:
-        # History and starred outputs using the history table component
-        history_table.render_history_overview()
-    
-    # Additional dashboard features
+
+
+def render_classic_stats():
+    """Render classic statistics panels."""
+    stats_panel.render_storage_stats()
     st.markdown("---")
+    stats_panel.render_pattern_stats()
+
+
+def render_dashboard_controls():
+    """Render dashboard action controls."""
     st.markdown("### ⚙️ Dashboard Actions")
+    
+    output_logs = st.session_state.get("output_logs", [])
+    starred_outputs = st.session_state.get("starred_outputs", [])
     
     col1, col2, col3 = st.columns(3)
     

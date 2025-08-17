@@ -10,7 +10,7 @@ import time
 from utils.errors import ui_error_boundary
 from utils.logging import logger
 from services import runner, patterns
-from components import pattern_selector, output_panel
+from components import pattern_selector, output_panel, input_preview, starring_system, welcome_screen
 
 @ui_error_boundary
 def render() -> None:
@@ -19,8 +19,7 @@ def render() -> None:
     _initialize_session_state()
     
     # Show welcome screen if configured
-    if st.session_state.get("show_welcome", True):
-        _show_welcome_screen()
+    welcome_screen.render_welcome_screen()
 
     # Check for patterns availability
     try:
@@ -67,9 +66,25 @@ def _render_execution_tab(available_patterns: List[str]) -> None:
         avg_time = st.session_state.execution_stats["avg_execution_time"]
         st.metric("Avg Time", f"{avg_time:.1f}s")
 
-    # Enhanced pattern selection
+    # Enhanced pattern selection with intelligent search
     st.subheader("🎨 Select Patterns")
-    selected_patterns = pattern_selector.render_pattern_selector("main_patterns")
+    
+    # Pattern selection mode
+    selection_mode = st.radio(
+        "Selection Mode",
+        ["🔍 Basic Search", "🧠 Intelligent Discovery"],
+        horizontal=True,
+        key="pattern_selection_mode"
+    )
+    
+    if selection_mode == "🔍 Basic Search":
+        selected_patterns = pattern_selector.render_pattern_selector("main_patterns")
+    else:
+        # Use intelligent pattern selector
+        from components import intelligent_pattern_selector
+        selector_result = intelligent_pattern_selector.render_intelligent_pattern_selector("intelligent_main")
+        selected_patterns = selector_result.get("selected_patterns", [])
+    
     st.session_state.selected_patterns = selected_patterns
 
     if selected_patterns:
@@ -104,6 +119,10 @@ def _render_execution_tab(available_patterns: List[str]) -> None:
                 if output.startswith("### 🎯"):
                     pattern_name = output.split("\n")[0].replace("### 🎯 ", "")
                     _show_pattern_feedback_ui(pattern_name, output)
+                    
+                    # Add starring functionality
+                    starring_sys = starring_system.create_starring_system()
+                    starring_sys.render_star_button(output, pattern_name, st.session_state.get("input_content", ""))
             
             # Clear the outputs from state so they don't re-display
             st.session_state.last_run_outputs = []
@@ -111,6 +130,10 @@ def _render_execution_tab(available_patterns: List[str]) -> None:
         # Enhanced output display
         if st.session_state.get("chat_output"):
             output_panel.render_output_panel(st.session_state.chat_output)
+        
+        # Handle starring dialogs (render outside of conditional blocks)
+        starring_sys = starring_system.create_starring_system()
+        starring_sys.render_starring_dialog()
 
     else:
         # Enhanced empty state
@@ -196,7 +219,7 @@ def _render_input_section() -> None:
 
     # Show input preview if enabled
     if st.session_state.get("show_preview", False) and st.session_state.get("input_content"):
-        _render_input_preview()
+        input_preview.render_input_preview(st.session_state.input_content, "execution_preview")
 
 
 @ui_error_boundary
@@ -360,14 +383,24 @@ def _execute_patterns(selected_patterns: List[str], chain_mode: bool, pattern_va
     # Update execution stats
     st.session_state.execution_stats["total_runs"] += 1
     
-    # Get current configuration
+    # Get current configuration (optional - Fabric can use defaults)
     current_provider = st.session_state.config.get("vendor")
     current_model = st.session_state.config.get("model")
     
-    if not current_provider or not current_model:
-        st.error("Please select a provider and model first.")
-        st.session_state.execution_stats["failed_runs"] += 1
-        return
+    # Debug: Log what we got from config
+    logger.info(f"Config - provider: {current_provider}, model: {current_model}")
+    
+    # If model looks like a full model name (e.g., "gpt-4.1-turbo"), don't use it as provider
+    if current_provider == current_model:
+        # This suggests the model name was incorrectly set as provider
+        current_provider = None
+        logger.info(f"Fixed config - provider: {current_provider}, model: {current_model}")
+    
+    # Note: Fabric can run without explicit provider/model if defaults are configured
+    if not current_provider and not current_model:
+        st.info("ℹ️ Using Fabric's default model configuration")
+        current_provider = None
+        current_model = None
 
     start_time = time.time()
     
@@ -375,11 +408,41 @@ def _execute_patterns(selected_patterns: List[str], chain_mode: bool, pattern_va
         if chain_mode:
             # Execute pattern chain
             chain_results = _execute_pattern_chain(selected_patterns, pattern_variables, current_provider, current_model)
+            
+            # Calculate execution time and update stats BEFORE any UI updates
+            execution_time = time.time() - start_time
+            st.session_state.execution_stats["avg_execution_time"] = (
+                (st.session_state.execution_stats["avg_execution_time"] *
+                 (st.session_state.execution_stats["total_runs"] - 1) + execution_time) /
+                st.session_state.execution_stats["total_runs"]
+            )
+            
+            # Check if chain was successful
+            if chain_results and chain_results.get("metadata", {}).get("success", False):
+                st.session_state.execution_stats["successful_runs"] += 1
+                logger.info(f"Chain execution completed successfully. Stats: {st.session_state.execution_stats}")
+            else:
+                st.session_state.execution_stats["failed_runs"] += 1
+                logger.error(f"Chain execution failed. Stats: {st.session_state.execution_stats}")
+            
             _display_chain_results(chain_results)
         else:
             # Execute patterns individually
             outputs = _execute_individual_patterns(selected_patterns, pattern_variables, current_provider, current_model)
+            
+            # Calculate execution time BEFORE rerun
+            execution_time = time.time() - start_time
+            st.session_state.execution_stats["avg_execution_time"] = (
+                (st.session_state.execution_stats["avg_execution_time"] *
+                 (st.session_state.execution_stats["total_runs"] - 1) + execution_time) /
+                st.session_state.execution_stats["total_runs"]
+            )
+            
             if outputs:
+                # Update success stats BEFORE rerun
+                st.session_state.execution_stats["successful_runs"] += 1
+                logger.info(f"Execution completed successfully. Stats: {st.session_state.execution_stats}")
+                
                 st.session_state.last_run_outputs = outputs
                 st.session_state.show_success_toast = True
                 
@@ -391,8 +454,14 @@ def _execute_patterns(selected_patterns: List[str], chain_mode: bool, pattern_va
                         _save_output_log(pattern_name, st.session_state.input_content, output, timestamp)
                 
                 st.rerun()
-
-        # Calculate execution time
+            else:
+                # No outputs means execution failed
+                st.session_state.execution_stats["failed_runs"] += 1
+                logger.error(f"Execution failed - no outputs. Stats: {st.session_state.execution_stats}")
+                st.error("Pattern execution completed but produced no output.")
+        
+    except Exception as e:
+        # Calculate execution time even for failures
         execution_time = time.time() - start_time
         st.session_state.execution_stats["avg_execution_time"] = (
             (st.session_state.execution_stats["avg_execution_time"] *
@@ -400,12 +469,11 @@ def _execute_patterns(selected_patterns: List[str], chain_mode: bool, pattern_va
             st.session_state.execution_stats["total_runs"]
         )
         
-        st.session_state.execution_stats["successful_runs"] += 1
-        
-    except Exception as e:
-        logger.error(f"Pattern execution failed: {e}")
-        st.error(f"Pattern execution failed: {e}")
+        # Update failure stats
         st.session_state.execution_stats["failed_runs"] += 1
+        logger.error(f"Pattern execution failed: {e}")
+        logger.error(f"Execution failed. Stats: {st.session_state.execution_stats}")
+        st.error(f"Pattern execution failed: {e}")
 
 
 @ui_error_boundary
@@ -423,7 +491,14 @@ def _execute_individual_patterns(selected_patterns: List[str], pattern_variables
     with status_container:
         st.write("🔍 Validating configuration...")
         st.write("✅ Configuration validated")
-        st.write(f"🤖 Using: {provider} - {model}")
+        
+        # Display model info properly
+        if provider and model:
+            st.write(f"🤖 Using: {provider} - {model}")
+        elif model:
+            st.write(f"🤖 Using model: {model}")
+        else:
+            st.write("🤖 Using Fabric's default configuration")
         
         for i, pattern in enumerate(selected_patterns, 1):
             st.write(f"🔄 Running pattern {i}/{len(selected_patterns)}: **{pattern}**")
@@ -434,6 +509,8 @@ def _execute_individual_patterns(selected_patterns: List[str], pattern_variables
             
             try:
                 # Execute pattern using runner service
+                st.write(f"🔧 Executing with provider={provider}, model={model}")
+                
                 result = runner.run_fabric(
                     pattern=pattern,
                     input_text=st.session_state.input_content,
@@ -441,8 +518,11 @@ def _execute_individual_patterns(selected_patterns: List[str], pattern_variables
                     model=model
                 )
                 
+                st.write(f"📊 Result: success={result.success}, exit_code={result.exit_code}, duration={result.duration_ms}ms")
+                
                 if result.success:
                     st.write(f"✅ Pattern **{pattern}** completed successfully")
+                    st.write(f"📄 Output length: {len(result.output)} characters")
                     
                     # Format output
                     output_msg = f"""### 🎯 {pattern}
@@ -456,7 +536,9 @@ def _execute_individual_patterns(selected_patterns: List[str], pattern_variables
                 else:
                     error_msg = f"❌ Pattern **{pattern}** failed: {result.error or 'Unknown error'}"
                     st.error(error_msg)
+                    st.write(f"🔍 Debug info: exit_code={result.exit_code}, meta={result.meta}")
                     logger.error(f"Pattern {pattern} failed: {result.error}")
+                    logger.error(f"Pattern {pattern} debug: exit_code={result.exit_code}, meta={result.meta}")
                     all_outputs.append(f"### ❌ {pattern}\n\n{result.error or 'Unknown error'}")
                     
             except Exception as e:
@@ -602,11 +684,6 @@ def _initialize_session_state() -> None:
         st.session_state.config = {}
 
 
-def _show_welcome_screen() -> None:
-    """Show welcome screen. This should be moved to a separate component."""
-    pass  # Placeholder for welcome screen
-
-
 def _get_clipboard_content() -> tuple[bool, str, str]:
     """Get content from clipboard."""
     try:
@@ -647,15 +724,7 @@ def _sanitize_input_content(content: str) -> str:
     return content
 
 
-def _render_input_preview() -> None:
-    """Render input content preview."""
-    with st.expander("👁 Input Preview", expanded=False):
-        content = st.session_state.get("input_content", "")
-        if content:
-            word_count = len(content.split())
-            char_count = len(content)
-            st.caption(f"📊 {word_count} words, {char_count} characters")
-            st.code(content[:1000] + "..." if len(content) > 1000 else content)
+# _render_input_preview removed - replaced by input_preview component
 
 
 def _detect_pattern_variables(pattern_name: str) -> List[str]:

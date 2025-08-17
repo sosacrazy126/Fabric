@@ -142,45 +142,75 @@ class ProviderService:
     
     @classmethod
     def list_available_models(cls, vendor: str = None) -> List[ModelSpec]:
-        """Query vendor for supported models or list all if vendor is None."""
+        """Query vendor for supported models with proper fabric CLI parsing."""
         models = []
         
         try:
             # Use fabric CLI to get models
             cmd = ["fabric", "--listmodels"]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0 and result.stdout:
-                for line in result.stdout.strip().split('\n'):
-                    model_str = line.strip()
-                    if not model_str:
-                        continue
-                    
-                    # Parse vendor/model format or detect vendor
-                    if '/' in model_str:
-                        vendor_name, model_name = model_str.split('/', 1)
-                    else:
-                        vendor_name = cls._detect_vendor_from_model(model_str)
-                        model_name = model_str
-                    
-                    # Filter by vendor if specified
-                    if vendor and vendor_name != vendor:
-                        continue
-                    
-                    # Create model spec
-                    spec = ModelSpec(
-                        vendor=vendor_name,
-                        model=model_name,
-                        display_name=model_str,
-                        context_length=cls._get_model_context_length(model_name)
-                    )
-                    models.append(spec)
-            
+                models = cls._parse_fabric_models_output(result.stdout, vendor)
+            else:
+                logger.warning(f"fabric --listmodels failed: {result.stderr}")
+                
         except subprocess.TimeoutExpired:
             logger.warning("Timeout while fetching models")
         except Exception as e:
             logger.error(f"Error fetching models: {e}")
         
+        return models
+    
+    @classmethod
+    def _parse_fabric_models_output(cls, output: str, filter_vendor: str = None) -> List[ModelSpec]:
+        """Parse the structured output from fabric --listmodels."""
+        import re
+        models = []
+        lines = output.strip().split('\n')
+        current_vendor = None
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Skip header and error messages
+            if ('Available models:' in line or 
+                'Ollama Get' in line or 
+                'dial tcp' in line or
+                'connect: connection refused' in line):
+                continue
+                
+            # Check if this is a vendor header (not indented, not numbered)
+            if (not line.startswith('\t') and 
+                not line.startswith('[') and 
+                not line.startswith('  [')):
+                # This is a vendor name like "OpenAI", "Gemini", etc.
+                current_vendor = line.lower()
+                continue
+                
+            # Parse numbered model entries: [1] model-name or \t[1]\tmodel-name
+            if current_vendor and ('[' in line):
+                # Handle both formats: "[1] model" and "\t[1]\tmodel"
+                match = re.search(r'\[(\d+)\]\s*(.+)', line)
+                if match:
+                    model_name = match.group(2).strip()
+                    
+                    # Filter by vendor if specified
+                    if filter_vendor and current_vendor != filter_vendor.lower():
+                        continue
+                        
+                    # Create model spec
+                    spec = ModelSpec(
+                        vendor=current_vendor,
+                        model=model_name,
+                        display_name=model_name,
+                        context_length=cls._get_model_context_length(model_name)
+                    )
+                    models.append(spec)
+        
+        logger.info(f"Parsed {len(models)} models from fabric CLI output")
         return models
     
     @classmethod

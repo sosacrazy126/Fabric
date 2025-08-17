@@ -27,10 +27,12 @@ def render() -> Tuple[Optional[str], Optional[str]]:
     
     # Debug logging
     logger.info(f"Config loaded - default_vendor: {config.default_vendor}, default_model: {config.default_model}")
+    logger.info(f"Fabric defaults validation - vendor: '{config.default_vendor}', model: '{config.default_model}'")
     
     # Get active vendors
     active_vendors = config_manager.get_active_vendors()
     logger.info(f"Active vendors: {list(active_vendors.keys())}")
+    logger.info(f"Active vendor configs: {[(name, vendor.enabled, bool(vendor.api_key)) for name, vendor in active_vendors.items()]}")
     
     if not active_vendors:
         st.warning("No providers configured. Please run 'fabric --setup' first.")
@@ -114,9 +116,12 @@ def render() -> Tuple[Optional[str], Optional[str]]:
         vendor_config = active_vendors[selected_vendor]
         
         # Get available models for this vendor
+        logger.info(f"Loading models for vendor: {selected_vendor}")
         models = provider_service.list_available_models(selected_vendor)
+        logger.info(f"Found {len(models)} models for {selected_vendor}: {[m.model for m in models[:5]]}{'...' if len(models) > 5 else ''}")
         
         if not models:
+            logger.warning(f"No models available for vendor: {selected_vendor}")
             st.info(f"No models available for {selected_vendor}.")
             
             # Show setup instructions based on vendor
@@ -134,6 +139,9 @@ def render() -> Tuple[Optional[str], Optional[str]]:
         default_model_idx = 0
         if config.default_model and config.default_model in model_names:
             default_model_idx = model_names.index(config.default_model)
+            logger.info(f"Using default model '{config.default_model}' at index {default_model_idx}")
+        else:
+            logger.info(f"Default model '{config.default_model}' not found in available models, using first model")
         
         selected_model = st.selectbox(
             "🤖 Model",
@@ -143,6 +151,7 @@ def render() -> Tuple[Optional[str], Optional[str]]:
             help=f"Select a {selected_vendor} model"
         )
         
+        logger.info(f"Final selection - vendor: '{selected_vendor}', model: '{selected_model}'")
         return selected_vendor, selected_model
 
 
